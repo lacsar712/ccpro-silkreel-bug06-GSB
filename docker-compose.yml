@@ -6,15 +6,15 @@ services:
       POSTGRES_USER: silkreel
       POSTGRES_PASSWORD: silkreel
     ports:
-      - "6670:5432"
+      - "6680:5432"
     volumes:
-      - silkreel_5270_9270_6670_pg:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U silkreel -d silkreel"]
-      interval: 5s
-      timeout: 5s
-      retries: 30
-      start_period: 40s
+      - silkreel_5280_9280_6680_pg:/var/lib/postgresql/data
+    # healthcheck:
+    #   test: ["CMD-SHELL", "pg_isready -U silkreel -d silkreel"]
+    #   interval: 5s
+    #   timeout: 5s
+    #   retries: 30
+    #   start_period: 40s
 
   backend:
     build: ./backend
@@ -22,17 +22,16 @@ services:
       DATABASE_URL: postgresql+asyncpg://silkreel:silkreel@db:5432/silkreel
       JWT_SECRET: silkreel-dev-secret
     ports:
-      - "9270:8760"
+      - "9280:8760"
     depends_on:
-      db:
-        condition: service_healthy
+      - db
 
   frontend:
     build: ./frontend
     ports:
-      - "5270:80"
+      - "5280:80"
     depends_on:
       - backend
 
 volumes:
-  silkreel_5270_9270_6670_pg:
+  silkreel_5280_9280_6680_pg:

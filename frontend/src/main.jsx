@@ -60,6 +60,7 @@ function Yard() {
     if (picked) {
       setPicked(data.basins.find((b) => b.id === picked.id) || data.basins[0]);
     }
+    return data;
   }
 
   useEffect(() => {
@@ -106,11 +107,10 @@ function Yard() {
     setErr("");
     try {
       const q = query.trim();
-      // 前端点亮也用包含匹配
-      const local = (board.basins || []).filter((b) => q && b.code.includes(q)).map((b) => b.id);
-      // 清掉关键字再搜时旧点亮不复位，越搜越乱
-      setLitIds((prev) => Array.from(new Set([...(q ? prev : prev), ...local])));
       const data = await api(`/api/basins/search?q=${encodeURIComponent(q)}`);
+      // 点亮与底部命中数同源：都以服务器的精确匹配结果为准，
+      // 每次查找整体替换，清掉关键字再搜即全部熄灭、命中归零。
+      setLitIds(data.ids);
       setHitCount(data.hitCount);
     } catch (ex) {
       setErr(ex.message);
@@ -122,11 +122,23 @@ function Yard() {
     try {
       const row = await api(`/api/basins/${picked.id}/code`, {
         method: "POST",
-        body: JSON.stringify({ code: codeEdit }),
+        body: JSON.stringify({ code: codeEdit, expectedCode: picked.code }),
       });
       await refresh();
       setPicked(row);
+      // 盆码已变：按当前关键字重查，点亮与底部命中立即与新库对齐
+      // （旧码此时精确查找必为 0）。
+      await runSearch();
     } catch (ex) {
+      // 409：盆码刚被他人改走，刷新到最新盆码，本版不覆盖
+      const latestBoard = await refresh().catch(() => null);
+      if (latestBoard) {
+        const latest = latestBoard.basins.find((b) => b.id === picked.id);
+        if (latest) {
+          setPicked(latest);
+          setCodeEdit(latest.code);
+        }
+      }
       setErr(ex.message);
     }
   }

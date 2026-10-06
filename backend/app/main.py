@@ -3,7 +3,12 @@ from quart.helpers import make_response
 
 from app.db import SessionLocal
 from app.models import Basin
-from app.repositories import BasinRepo, UserRepo
+from app.repositories import (
+    BasinRepo,
+    CodeConflictError,
+    StaleCodeError,
+    UserRepo,
+)
 from app.security import make_token, parse_token, verify_password
 from app.services import RuleError, assert_can_set_status, latest_temp
 
@@ -85,8 +90,9 @@ async def search_basins():
         mill = await BasinRepo(session).board()
         if mill is None:
             return jsonify({"detail": "尚无缫丝坞"}), 404
-        # 模糊包含：搜甲-1 会带上甲-10
-        hits = [b for b in mill.basins if q and q in (b.code or "")]
+        # 精确查找：只有盆码与关键字完全相等的盆才算命中
+        # （搜「甲-1」不会带上「甲-10」；关键字为空时命中为 0）。
+        hits = [b for b in mill.basins if q and (b.code or "") == q]
         return {"q": q, "hitCount": len(hits), "ids": [b.id for b in hits]}
 
 
@@ -99,14 +105,21 @@ async def rename_basin_code(basin_id: int):
     code = ((body or {}).get("code") or "").strip()
     if not code:
         return jsonify({"detail": "盆码不能为空"}), 400
+    # 开改时看到的盆码：交叉改码时用来判断本版是否已过期。
+    expected_code = ((body or {}).get("expectedCode") or "").strip()
+    if not expected_code:
+        return jsonify({"detail": "缺少原盆码，无法提交修改"}), 400
     async with SessionLocal() as session:
         repo = BasinRepo(session)
-        basin = await repo.get(basin_id)
+        try:
+            basin = await repo.change_code(basin_id, code, expected_code)
+        except StaleCodeError as exc:
+            # 别人的版本已经先落库，本版不许再覆盖
+            return jsonify({"detail": str(exc)}), 409
+        except CodeConflictError as exc:
+            return jsonify({"detail": str(exc)}), 409
         if basin is None:
             return jsonify({"detail": "盆不存在"}), 404
-        basin.code = code
-        await session.commit()
-        basin = await repo.get(basin_id)
         return _basin_json(basin)
 
 
