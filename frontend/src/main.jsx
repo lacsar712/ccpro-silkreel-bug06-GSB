@@ -50,7 +50,7 @@ function Yard() {
   const [temp, setTemp] = useState("40");
   const [err, setErr] = useState("");
   const [query, setQuery] = useState("");
-  const [litIds, setLitIds] = useState([]);
+  const [activeQuery, setActiveQuery] = useState("");
   const [hitCount, setHitCount] = useState(0);
   const [codeEdit, setCodeEdit] = useState("");
 
@@ -60,6 +60,15 @@ function Yard() {
     if (picked) {
       setPicked(data.basins.find((b) => b.id === picked.id) || data.basins[0]);
     }
+    return data;
+  }
+
+  // 记录当前精确查找关键字；点亮在渲染时按盆码完全相等判定，
+  // 底部命中取库里精确相等的盆数，二者口径一致。
+  async function applySearch(q) {
+    const data = await api(`/api/basins/search?q=${encodeURIComponent(q)}`);
+    setActiveQuery(q);
+    setHitCount(data.hitCount);
   }
 
   useEffect(() => {
@@ -105,13 +114,9 @@ function Yard() {
   async function runSearch() {
     setErr("");
     try {
-      const q = query.trim();
-      // 前端点亮也用包含匹配
-      const local = (board.basins || []).filter((b) => q && b.code.includes(q)).map((b) => b.id);
-      // 清掉关键字再搜时旧点亮不复位，越搜越乱
-      setLitIds((prev) => Array.from(new Set([...(q ? prev : prev), ...local])));
-      const data = await api(`/api/basins/search?q=${encodeURIComponent(q)}`);
-      setHitCount(data.hitCount);
+      // 精确查找：点亮与底部命中都取库里盆码完全相等的结果；
+      // 关键字清空后再查找，点亮与命中数一起复位，不累加旧结果。
+      await applySearch(query.trim());
     } catch (ex) {
       setErr(ex.message);
     }
@@ -126,6 +131,10 @@ function Yard() {
       });
       await refresh();
       setPicked(row);
+      // 改完盆码后按当前关键字重算：旧码若已不存在，点亮与底部命中都归 0
+      if (activeQuery) {
+        await applySearch(activeQuery);
+      }
     } catch (ex) {
       setErr(ex.message);
     }
@@ -163,7 +172,7 @@ function Yard() {
           const angle = (Math.PI * 2 * i) / n - Math.PI / 2;
           const left = 50 + Math.cos(angle) * 38;
           const top = 50 + Math.sin(angle) * 38;
-          const lit = litIds.includes(b.id);
+          const lit = Boolean(activeQuery) && b.code === activeQuery;
           return (
             <button
               key={b.id}

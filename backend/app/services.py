@@ -10,6 +10,12 @@ class RuleError(ValueError):
     pass
 
 
+class DuplicateCodeError(RuleError):
+    """同一缫丝坞内盆码已被占用（两名工并发改到同一盆码）。"""
+
+    pass
+
+
 def latest_temp(basin: Basin) -> float | None:
     if not basin.readings:
         return None

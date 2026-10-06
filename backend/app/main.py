@@ -5,7 +5,12 @@ from app.db import SessionLocal
 from app.models import Basin
 from app.repositories import BasinRepo, UserRepo
 from app.security import make_token, parse_token, verify_password
-from app.services import RuleError, assert_can_set_status, latest_temp
+from app.services import (
+    DuplicateCodeError,
+    RuleError,
+    assert_can_set_status,
+    latest_temp,
+)
 
 app = Quart(__name__)
 
@@ -85,8 +90,8 @@ async def search_basins():
         mill = await BasinRepo(session).board()
         if mill is None:
             return jsonify({"detail": "尚无缫丝坞"}), 404
-        # 模糊包含：搜甲-1 会带上甲-10
-        hits = [b for b in mill.basins if q and q in (b.code or "")]
+        # 精确查找：只有盆码完全等于关键字的盆才命中（甲-1 不会点亮甲-10）
+        hits = [b for b in mill.basins if b.code == q]
         return {"q": q, "hitCount": len(hits), "ids": [b.id for b in hits]}
 
 
@@ -104,8 +109,10 @@ async def rename_basin_code(basin_id: int):
         basin = await repo.get(basin_id)
         if basin is None:
             return jsonify({"detail": "盆不存在"}), 404
-        basin.code = code
-        await session.commit()
+        try:
+            await repo.rename_code(basin, code)
+        except DuplicateCodeError as exc:
+            return jsonify({"detail": str(exc)}), 409
         basin = await repo.get(basin_id)
         return _basin_json(basin)
 

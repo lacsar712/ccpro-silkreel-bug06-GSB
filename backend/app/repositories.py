@@ -1,8 +1,10 @@
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models import Basin, BathReading, Filature, User
+from app.services import DuplicateCodeError
 
 
 class UserRepo:
@@ -44,3 +46,13 @@ class BasinRepo:
     async def save_status(self, basin: Basin, status: str) -> None:
         basin.status = status
         await self.session.commit()
+
+    async def rename_code(self, basin: Basin, code: str) -> None:
+        """原子改盆码。两名工并发把不同盆改成同一盆码时，唯一约束只放一版，
+        其余一版回滚并抛 DuplicateCodeError。"""
+        basin.code = code
+        try:
+            await self.session.commit()
+        except IntegrityError as exc:
+            await self.session.rollback()
+            raise DuplicateCodeError(f"盆码 {code} 已存在") from exc
